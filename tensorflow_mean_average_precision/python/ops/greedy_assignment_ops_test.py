@@ -5,11 +5,7 @@ from __future__ import print_function
 import numpy as np
 
 from tensorflow.python.platform import test
-try:
-    from tensorflow_mean_average_precision.python.ops \
-        import greedy_assignment_ops
-except ImportError:
-    import greedy_assignment_ops
+from tensorflow_mean_average_precision.python.ops import greedy_assignment_ops
 
 
 class TestGreedyAssignment(test.TestCase):
