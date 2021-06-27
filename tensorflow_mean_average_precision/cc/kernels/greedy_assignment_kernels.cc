@@ -51,11 +51,9 @@ public:
                     continue;
                 auto current_similarity = similarities(target, prediction);
                 // Ignore candidate that does not exceed similarity threshold
-                if (current_similarity < threshold)
-                    continue;
-                // Save target of better match
-                if (best_target == num_targets
-                        || best_similarity < current_similarity) {
+                if (threshold < current_similarity
+                        && (best_target == num_targets 
+                            || best_similarity < current_similarity)) {
                     best_target = target;
                     best_similarity = current_similarity;
                 }
