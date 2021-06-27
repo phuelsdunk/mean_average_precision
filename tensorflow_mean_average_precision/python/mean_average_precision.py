@@ -1,16 +1,25 @@
 from __future__ import absolute_import
-from functools import partial
+
+import tensorflow as tf
 
 from tensorflow_mean_average_precision.python.ops import greedy_assignment_ops
 from tensorflow.keras.metrics import Metric, AUC
 
 
+@tf.function
+def _batch_greedy_assignment(similarity_matrix, threshold):
+    return tf.map_fn(
+        lambda x: greedy_assignment_ops.greedy_assignment(
+            x, threshold),
+        similarity_matrix,
+        fn_output_signature=tf.bool)
+
+
 class MeanAveragePrecision(Metric):
 
-    def __init__(self, similarity_fn, thresholds, name=None):
+    def __init__(self, thresholds, name=None):
         super(MeanAveragePrecision, self).__init__(name=name)
 
-        self.similarity_fn = similarity_fn
         self.thresholds = thresholds
 
         self.ap_metrics = [
@@ -26,46 +35,14 @@ class MeanAveragePrecision(Metric):
         return tf.reduce_mean([metric.result() for metric in self.ap_metrics],
                               name='result')
 
-    def update_state(self, y_true, y_pred, sample_weight=None):
-        true_locations, true_scores = y_true
-        pred_locations, pred_scores = y_pred
-        
-        similarities = self.similarity_fn(true_locations, pred_locations)
-
-        batch_dims = 1
-        true_slice = (
-            batch_dims * (slice(None), )
-            + (len(true_locations.shape) - batch_dims - 2) * (slice(None), )
-            + (len(pred_locations.shape) - batch_dims - 2) * (tf.newaxis, )
-        )
-        similarities_weights = true_scores[true_slice]
-
-        instance_similarities = tf.math.divide_no_nan(
-            tf.reduce_sum(similarities * similarities_weights, axis=-1),
-            tf.reduce_sum(similarities_weights, axis=-1))
-
-        pred_match_masks = [
-            tf.map_fn(
-                partial(
-                    greedy_assignment_ops.greedy_assignment,
-                    threshold=threshold),
-                instance_similarities)
-            for threshold in self.thresholds
-        ]
-        pred_match_scores = tf.reduce_mean(pred_scores, axis=-1)
-
-        ops = [
-            metric.update_state(
-            pred_match_mask,
-            pred_match_scores,
+    def update_state(self, similarity_true_pred, scores_pred,
+                     sample_weight=None):
+        ops = [metric.update_state(
+            _batch_greedy_assignment(similarity_true_pred, threshold),
+            scores_pred,
             sample_weight)
-            for pred_match_mask, metric
-            in zip(pred_match_masks, self.ap_metrics)
-        ]
-
+            for threshold, metric in zip(self.thresholds, self.ap_metrics)]
         return tf.group(ops, name='update_state')
 
     def get_config(self):
-        return {'thresholds': self.thresholds,
-                'sigmas': self.sigmas}
-
+        return {'thresholds': self.thresholds}
